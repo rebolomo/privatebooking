@@ -1,0 +1,10 @@
+table caption {
+	font-size: 26px;
+	font-weight: bold;
+}
+
+.total_amount {
+	color: green;
+	font-size: 28px;
+	font-weight: bold;
+}

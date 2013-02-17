@@ -1,0 +1,61 @@
+<?php
+//$Id;
+
+
+/**
+ * Implementation of hook_install()
+ */
+function uc_userpoints_payment_install() {
+  // Create tables.
+  drupal_install_schema('uc_userpoints_payment');
+}
+
+
+/**
+* Implementation of hook_uninstall().
+*/
+function uc_userpoints_payment_uninstall() {
+  // Remove tables.
+  drupal_uninstall_schema('uc_userpoints_payment');
+  
+  // Remove variables
+  variable_del('userpoints_ubercart_payment');
+  variable_del('userpoints_display');
+  variable_del('userpoints_pay_moderate');
+  variable_del('userpoints_pay_category');
+}
+
+
+/**
+ * Define the database scheme for hook_schema().
+ */
+function uc_userpoints_payment_schema() {
+  $schema['uc_up_payment_log'] = array(
+    'fields' => array(
+      'uplog_id' => array(
+        'type' => 'serial', 
+        'not null' => TRUE,
+      ),
+      'uid' => array(
+        'type' => 'int', 
+        'not null' => TRUE, 
+        'default' => 0,
+      ),
+      'oid' => array(
+        'type' => 'int', 
+        'not null' => TRUE, 
+        'default' => 0,
+      ),
+			//	REBOL edit
+      'points' => array(
+        'type' => 'numeric',
+        'precision' => 16,
+        'scale' => 5,
+        'not null' => TRUE, 
+        'default' => 0,
+      )
+    ),
+    'primary key' => array('uplog_id'),
+  );
+  return $schema;
+}

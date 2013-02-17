@@ -1,0 +1,13 @@
+name = Custom_url
+description = add custom urls to make new flexible page, we can template the pages by page-url.tpl.php
+package = Custom
+core = 6.x
+
+files[] = custom_url.module
+
+; Information added by drupal.org packaging script on 2011-04-06
+version = "6.x-1.0"
+core = "6.x"
+project = "custom_url"
+datestamp = "1302133615"
+

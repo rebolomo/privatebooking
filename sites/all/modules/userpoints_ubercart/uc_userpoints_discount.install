@@ -1,0 +1,67 @@
+<?php
+//$Id;
+
+
+/**
+ * Implementation of hook_schema
+ */
+function uc_userpoints_discount_schema() {
+  $schema['uc_updiscounts'] = array(
+    'fields' => array(
+      'updlog_id' => array(
+        'type' => 'serial', 
+        'not null' => TRUE
+      ),
+	    'uid' => array(
+	      'type' => 'int', 
+	      'not null' => TRUE, 
+	      'default' => '0'
+	    ),
+	    'oid' => array(
+	      'type' => 'int', 
+	      'not null' => TRUE, 
+	      'default' => '0'
+	    ),
+	    'ptamt' => array(
+	      'type' => 'numeric', 
+	      'precision' => 10, 
+	      'scale' => 2, 
+	      'not null' => TRUE, 
+	      'default' => '0'
+	    ),
+	    'points' => array(
+	      'type' => 'int', 
+	      'not null' => TRUE, 
+	      'default' => '0'
+	    ),
+	  ),
+	'primary key' => array(
+	  'updlog_id'
+	  )
+  );
+
+  return $schema;
+}
+
+
+/**
+ * Install the initial schema.
+ */
+function uc_userpoints_discount_install() {
+  drupal_install_schema('uc_userpoints_discount');
+}
+
+
+/**
+* Implementation of hook_uninstall().
+*/
+function uc_userpoints_discount_uninstall() {
+  drupal_uninstall_schema('uc_userpoints_discount');
+  
+  variable_del('userpoints_ubercart_payment');
+  variable_del('uc_userpoints_discount_maxp');
+  variable_del('userpoints_discount');
+  variable_del('userpoints_discount_category');
+  variable_del('uc_userpoints_discount_moderate');
+  variable_del('uc_userpoints_discount_classes');
+}

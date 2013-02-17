@@ -1,0 +1,259 @@
+<?php
+//$Id;
+
+
+define('UC_USERPOINTS_SELLER_EARN',      'uc_userpoints_seller_earn');
+define('UC_USERPOINTS_SELLER_DISP',      'uc_userpoints_seller_disp');
+define('UC_USERPOINTS_SELLER_HIST',      'uc_userpoints_seller_hist');
+
+
+/* Begin Seller History Reporting */
+
+function uc_userpoints_seller_menu() {
+  $items = array();
+
+  $items['admin/store/reports/sales-points'] = array(
+    'title' => 'Sales Points Reports',
+	  'description' => 'View reports for points earned by store sales',
+	  'page callback' => 'uc_seller_history_all',
+	  'access arguments' => array('view reports'),
+	  'type' => MENU_NORMAL_ITEM,
+  );
+  $items['user/%user/sales-points'] = array(
+    'title' => 'Sales Points',
+	  'description' => 'View your points earned by sales',
+	  'page callback' => 'uc_seller_history_user',
+	  'page arguments' => array(1),
+	  'access arguments' => array('view own userpoints'),
+	  'type' => MENU_LOCAL_TASK
+  );
+
+  return $items;
+}
+
+/**
+ * Returns the sortable table listing of a sellers orders.
+ *
+ * @param $uid
+ *   The user ID whose orders you wish to list.
+ */
+function uc_seller_history_user($usr) {
+  drupal_set_title(t('My Sales Points History'));
+
+  $breadcrumb = drupal_get_breadcrumb();
+  $breadcrumb[] = l(t('My account'), 'user/'. $usr->uid);
+  drupal_set_breadcrumb($breadcrumb);
+
+  $header = array(
+    array('data' => t('Order #'), 'field' => 'oid'),
+    array('data' => t('Qty'), 'field' => 'qty'),
+    array('data' => t('Model'), 'field' => 'model'),
+    array('data' => t('Sell Price'), 'field' => 'sellprice'),
+    array('data' => t('Total'), 'field' => 'total'),
+    array('data' => t('Points'), 'field' => 'points'),
+  );
+
+  $result = pager_query("SELECT uid, oid, points, qty, model, sellprice, (qty * sellprice) AS total FROM {uc_up_seller_log} WHERE uid = %d". tablesort_sql($header), 20, 0, "SELECT COUNT(*) FROM {uc_up_seller_log} WHERE uid = %d", $usr->uid, $usr->uid);
+
+  // Build a table based on the customer's sales.
+  while ($sales = db_fetch_object($result)) {
+    $rows[] = array(
+      array('data' => $sales->oid),
+      array('data' => $sales->qty),
+      array('data' => $sales->model),
+      array('data' => $sales->sellprice),
+      array('data' => uc_currency_format($sales->total, TRUE), 'align' => 'right'),
+      array('data' => $sales->points),
+    );
+  }
+
+  $output = theme('table', $header, $rows) . theme('pager', null, 20, 0);
+
+  return $output;
+}
+
+function uc_seller_history_all() {
+  drupal_set_title(t('Sales Points History'));
+
+  $header = array(
+    array('data' => t('User'), 'field' => 'uid'),
+    array('data' => t('Order #'), 'field' => 'oid'),
+    array('data' => t('Qty'), 'field' => 'qty'),
+    array('data' => t('Model'), 'field' => 'model'),
+    array('data' => t('Sell Price'), 'field' => 'sellprice'),
+    array('data' => t('Total'), 'field' => 'total'),
+    array('data' => t('Points'), 'field' => 'points'),
+  );
+
+  $result = pager_query("SELECT u.name, sl.uid, sl.oid, sl.points, sl.qty, sl.model, sl.sellprice, (qty * sellprice) AS total FROM {uc_up_seller_log} sl left join {users} as u on sl.uid = u.uid". tablesort_sql($header), 20, 0, "SELECT COUNT(*) FROM {uc_up_seller_log}");
+
+  // Build a table based on the customer's sales.
+  while ($sales = db_fetch_object($result)) {
+    $rows[] = array(
+      array('data' => '<a href="/user/' . $sales->uid . '">' . $sales->name . '</a>'),
+      array('data' => $sales->oid),
+      array('data' => $sales->qty),
+      array('data' => $sales->model),
+      array('data' => $sales->sellprice),
+      array('data' => uc_currency_format($sales->total, TRUE), 'align' => 'right'),
+      array('data' => $sales->points),
+    );
+  }
+
+  $output = theme('table', $header, $rows) . theme('pager', null, 20, 0);
+
+  return $output;
+}
+
+
+/* End Seller History */
+
+
+
+function uc_userpoints_seller_userpoints($op, $points = 0, $uid = 0, $event = '') {
+  switch($op) {
+    case 'setting':
+      if (module_exists('uc_cart') && module_exists('uc_payment')) {
+        $group = 'uc_seller';
+        $form[$group] = array(
+          '#type' => 'fieldset',
+          '#collapsible' => TRUE,
+          '#collapsed' => TRUE,
+          '#title' => t('Ubercart Seller Options'),
+        );
+    
+        $form[$group][UC_USERPOINTS_SELLER_EARN] = array(
+          '#type' => 'textfield',
+          '#title' => t('!Points awarded to seller purchase (multiplied by product price)', userpoints_translation()),
+          '#default_value' => variable_get(UC_USERPOINTS_SELLER_EARN, 0),
+          '#size' => 5,
+          '#maxlength' => 5,
+        );
+        $form[$group][UC_USERPOINTS_SELLER_DISP] = array(
+          '#type' => 'radios',
+          '#title' => t('Display amount of !points awarded to seller', userpoints_translation()),
+          '#default_value' => variable_get(UC_USERPOINTS_SELLER_DISP, 0),
+		  '#options' => array(t('No'), t('Yes')),
+        );
+        $form[$group][UC_USERPOINTS_SELLER_HIST] = array(
+          '#type' => 'radios',
+          '#title' => t('Allow user to see transaction history under "My Account"'),
+          '#default_value' => variable_get(UC_USERPOINTS_SELLER_HIST, 1),
+	   	  '#options' => array(t('No'), t('Yes')),
+        );
+      }
+      return $form;
+      break;
+  }
+}
+
+
+/*
+ * Implementation of hook_ca_action
+ */
+function uc_userpoints_seller_ca_action() {
+  $order_arg = array(
+    '#entity' => 'uc_order',
+	  '#title' => t('Order'),
+  );
+
+  $actions['uc_userpoints_seller_award_points'] = array(
+    '#title' => t('Award seller points'),
+	  '#category' => t('Order'),
+	  '#callback' => 'uc_userpoints_seller_award_points',
+	  '#arguments' => array(
+  	  'order' => $order_arg,
+	  ),
+  );
+
+  return $actions;
+}
+
+/**
+* Implementation of hook_ca_predicate().
+*/
+function uc_userpoints_seller_ca_predicate() {
+  // Give the seller the points they earned when a payment is received
+  // and the balance is less than or equal to 0.
+  $configurations['uc_userpoints_seller_award'] = array(
+    '#title' => t('Award seller points on full payment'),
+    '#description' => t('Only happens when a payment is entered and the balance is <= $0.00.'),
+    '#class' => 'points',
+    '#trigger' => 'uc_payment_entered',
+    '#status' => 1,
+    '#weight' => 0,
+    '#conditions' => array(
+      '#operator' => 'AND',
+      '#conditions' => array(
+        array(
+          '#name' => 'uc_payment_condition_order_balance',
+          '#title' => t('If the balance is less than or equal to $0.00.'),
+          '#argument_map' => array(
+            'order' => 'order',
+          ),
+          '#settings' => array(
+            'negate' => FALSE,
+            'balance_comparison' => 'less_equal',
+          ),
+        ),
+        array(
+          '#name' => 'uc_order_status_condition',
+          '#title' => t('If the order status is not already Payment Received.'),
+          '#argument_map' => array(
+            'order' => 'order',
+          ),
+          '#settings' => array(
+            'negatr' => TRUE,
+            'order_status' => 'payment_received',
+          ),
+        ),
+      ),
+    ),
+    '#actions' => array(
+      array(
+        '#name' => 'uc_userpoints_seller_award_points',
+        '#title' => t('Give points to the seller.'),
+        '#argument_map' => array(
+          'order' => 'order',
+        ),
+        '#settings' => array(
+        ),
+      ),
+    ),
+  );
+
+  return $configurations;
+}
+
+/* ************************************************************************* *
+ *  Workflow-ng Action Callbacks and Forms                                   *
+ * ************************************************************************* */
+
+function uc_userpoints_seller_award_points(&$order, $settings) {
+  if (is_array($order->products)) {
+    foreach ($order->products as $product) {
+			$product_info = db_fetch_object(db_query("select n.uid from {node} n, {uc_products} p where n.vid = p.vid and p.model =  '%s'", $product->model));
+			$total = (intval($product->qty) * intval($product->price));
+			$multiplier = variable_get(UC_USERPOINTS_SELLER_EARN, 0);
+		  $points = intval(($total * $multiplier));
+			$blnDisplay = variable_get(UC_USERPOINTS_SELLER_DISP, 0);
+			
+			if ($points > 0) {
+				$params = array (
+					'tid' => 0,
+					'uid' => $product_info->uid,
+					'points' => $points,
+					'operation' => 'insert',
+					'description' => 'Someone purchased a product belonging to ' . $product_info->uid . ', awarding points (Ubercart Order ID ' . $order->order_id . ')',
+					'display' => $blnDisplay,
+				);
+				$st = userpoints_userpointsapi($params);
+			  db_query("insert into {uc_up_seller_log} (uid, oid, points, qty, model, sellprice) values(%d, %d, %d, %d, '%s', %d)", $product_info->uid, $order->order_id, $points, $product->qty, $product->model, $product->price);
+			}
+			$total = '';
+			$multiplier = '';
+			$points = '';
+    }
+  }
+}
+

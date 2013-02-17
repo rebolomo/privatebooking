@@ -1,0 +1,264 @@
+<?php
+//$Id;
+
+define('USERPOINTS_UC_EARN',      'userpoints_ubercart_earn');
+define('USERPOINTS_MIN_PURCHASE', 'userpoints_min_purchase');
+define('USERPOINTS_AWARD_TO',     'userpoints_award_to');
+define('USERPOINTS_REF_MULT',     'userpoints_ref_mult');
+define('USERPOINTS_AWARD_MODERATE',     'userpoints_award_moderate');
+define('USERPOINTS_REF_MODERATE',     'userpoints_ref_moderate');
+
+function uc_userpoints_award_help($path, $arg) {
+  switch ($path) {
+    case 'admin/modules#description':
+      return t('<strong>Userpoints Award:</strong> Interfaces userpoints with Ubercart so users can get points for purchases.');
+  }
+}
+
+function uc_userpoints_award_userpoints($op, $points = 0, $uid = 0, $event = '') {
+  switch($op) {
+    case 'setting':
+      if (module_exists('uc_cart') && module_exists('uc_payment')) {
+        $group = 'uc_userpoints_award';
+        $form[$group] = array(
+          '#type' => 'fieldset',
+          '#collapsible' => TRUE,
+          '#collapsed' => TRUE,
+          '#title' => t('Ubercart Award Options'),
+        );
+        $form[$group][USERPOINTS_UC_EARN] = array(
+          '#type' => 'textfield',
+          '#title' => t('!Points awarded for buying (multiplied by product price)', userpoints_translation()),
+          '#default_value' => variable_get(USERPOINTS_UC_EARN, 0),
+          '#size' => 5,
+          '#maxlength' => 5,
+        );
+        $form[$group][USERPOINTS_MIN_PURCHASE] = array(
+          '#type' => 'textfield',
+          '#title' => t('Smallest purchase for which !points are awarded', userpoints_translation()),
+          '#default_value' => variable_get(USERPOINTS_MIN_PURCHASE, '0.00'),
+          '#size' => 5,
+          '#maxlength' => 5,
+        );
+        $form[$group][USERPOINTS_AWARD_MODERATE] = array(
+          '#type' => 'radios',
+          '#title' => t('Moderate userpoints transaction'),
+          '#default_value' => variable_get(USERPOINTS_AWARD_MODERATE, 0),
+					'#options' => array(t('No'), t('Yes')),
+        );
+        $form[$group][USERPOINTS_AWARD_CATEGORY] = array(
+          '#type' => 'select',
+          '#title' => t('Award Category'),
+          '#description' => t('Category to assign awarded !points.', userpoints_translation()),
+          '#default_value' => variable_get(USERPOINTS_AWARD_CATEGORY, NULL),
+          '#options' => userpoints_get_categories(),
+        );
+
+        if(module_exists('referral')) {
+          $form[$group][USERPOINTS_AWARD_TO] = array(
+            '#type' => 'radios',
+            '#title' => t('User to whom !points are awarded on purchase', userpoints_translation()),
+            '#default_value' =>  variable_get(USERPOINTS_AWARD_TO,0),
+            '#options' => array(t('Referrer only'), t('Purchaser only'), t('Referrer and Purchaser')),
+          );
+          $form[$group][USERPOINTS_REF_MULT] = array(
+            '#type' => 'textfield',
+            '#title' => t('!points multiplier for referrer', userpoints_translation()),
+            '#default_value' =>  variable_get(USERPOINTS_REF_MULT,1),
+            '#size' => 5,
+            '#maxlength' => 5,
+            '#description' => t('Enter the number of !points awarded per dollar.  <b>This field is only valid when "Referrer and Purchaser" is selected above.  Otherwise the standard multiplier is used.</b>', userpoints_translation()),
+          );
+		      $form[$group][USERPOINTS_REF_MODERATE] = array(
+			      '#type' => 'radios',
+			      '#title' => t('Moderate userpoints transaction'),
+			      '#default_value' => variable_get(USERPOINTS_REF_MODERATE, 0),
+			      '#options' => array(t('No'), t('Yes')),
+		      );
+        }
+      }
+      return $form;
+      break;
+  }
+}
+
+
+/**
+ * Implementation of hook_ca_action
+ */
+function uc_userpoints_award_ca_action() {
+	$order_arg = array(
+	  '#entity' => 'uc_order',
+	  '#title' => t('Order'),
+	);
+
+	$actions['uc_userpoints_buyer_award_points'] = array(
+	  '#title' => t('Award buyer points'),
+	  '#category' => t('Order'),
+	  '#callback' => 'uc_userpoints_buyer_award_points',
+	  '#arguments' => array(
+	    'order' => $order_arg,
+	  ),
+	);
+
+	return $actions;
+}
+
+/**
+ * Implementation of hook_ca_predicate
+ **/
+function uc_userpoints_award_ca_predicate() {
+	$predicates['uc_userpoints_default_award'] = array (
+  '#title' => t('Award points if order complete'),
+  '#description' => '',
+  '#class' => '',
+  '#status' => '1',
+  '#weight' => '0',
+  '#uid' => '0',
+  '#trigger' => 'uc_order_status_update',
+  '#conditions' => 
+  array (
+    '#operator' => 'AND',
+    '#conditions' => 
+    array (
+      0 => 
+      array (
+        '#operator' => 'AND',
+        '#conditions' => 
+        array (
+          0 => 
+          array (
+            '#name' => 'uc_order_status_condition',
+            '#title' => 'Check the order status',
+            '#argument_map' => 
+            array (
+              'order' => 'updated_order',
+            ),
+            '#settings' => 
+            array (
+              'negate' => 0,
+              'order_status' => 'completed',
+            ),
+          ),
+          1 => 
+          array (
+            '#name' => 'uc_order_status_condition',
+            '#title' => 'Check the order status',
+            '#argument_map' => 
+            array (
+              'order' => 'order',
+            ),
+            '#settings' => 
+            array (
+              'negate' => 1,
+              'order_status' => 'completed',
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
+  '#actions' => 
+  array (
+    0 => 
+    array (
+      '#name' => 'uc_userpoints_buyer_award_points',
+      '#title' => t('Award buyer points'),
+      '#argument_map' => 
+      array (
+        'order' => 'updated_order',
+      ),
+      '#settings' => 
+      array (
+      ),
+    ),
+  ),
+);
+return $predicates;
+}
+
+
+/* ************************************************************************* *
+ *  Workflow-ng Action Callbacks and Forms                                   *
+ * ************************************************************************* */
+
+function uc_userpoints_buyer_award_points($order, $settings) {
+  // gives the user points for thier purchase, but checks via sql if they paid with points.  if so they get nothing also dont give points for tax and shipping.
+
+  global $user;
+  $curUserId	= $order->uid; //$user->uid; // $user->uid means nothing when the IPN call comes in...
+  $multiplier 	= variable_get(USERPOINTS_UC_EARN, 0);
+  $min 			= variable_get(USERPOINTS_MIN_PURCHASE, '0.00');
+  $result 		= db_query("select sum(qty * price) from {uc_order_products} p, {uc_orders} o where p.order_id = o.order_id and o.order_id = %d and o.uid = %d", $order->order_id, $curUserId);
+  $total		= db_result($result, $row = 0);
+
+  $refUserId = 0; // default to 0 so if referral module is not installed or no referrer, we skip all referral code
+  $ref_mult = 1; // assume a multiplier of 1, unless $award_to == 2, in which case we retrieve the value below
+
+  // award_to: 0 = award points to referral
+  // award_to: 1 = award points to purchaser
+  // award_to: 2 = award points to referral and purchaser
+  $award_to     = intval(variable_get(USERPOINTS_AWARD_TO, 1));
+
+  if (module_exists('referral')) {
+    if($award_to == 0 || $award_to == 2){
+      // Look up our referrer if we have one
+      $result = db_query("select referral_uid FROM {referral} WHERE uid = %d", $curUserId);
+      if(!empty($result)){
+        $ref = db_fetch_object($result);
+        $refUserId = $ref->referral_uid;
+        if($award_to == 2){
+          $ref_mult =  variable_get(USERPOINTS_REF_MULT,1);
+        }
+      }
+    }
+  }
+	
+
+	// Payment completed
+	// Award points to buyer, if appropriate
+	if ($curUserId != 0 && ($award_to==1 || $award_to==2) && strtolower($order->payment_method) != 'points') {
+		// User id from the transaction
+	
+		if ($total < $min) {
+			$points = 0;
+		}
+		else {
+			$points = intval(($total * $multiplier));
+			$params = array (
+				'tid' => variable_get(USERPOINTS_AWARD_CATEGORY, 0),
+				'uid' => $curUserId,
+				'points' => $points,
+				'operation' => 'insert',
+				'description' => 'User made a purchase, awarding points (Ubercart Order ID ' . $order->order_id . ')',
+//				'entity_id' => $order->order_id,
+//				'entity_type' => 'Ubercart Transaction',
+				'moderate' => variable_get(USERPOINTS_AWARD_MODERATE, 0),
+			);
+			$st = userpoints_userpointsapi($params);
+			db_query("insert into {uc_up_award_log} (uid, oid, points) values(%d, %d, %d)", $curUserId, $order->order_id, $points);
+		}
+	}
+	
+	// Award referral points, if appropriate
+	if ($refUserId != 0 && ($award_to==0 || $award_to==2)) {
+		if ($total < $min) {
+			$points = 0;
+		}
+		else {
+			$points = intval(($total * $multiplier * $ref_mult));
+			$params = array (
+				'tid' => variable_get(USERPOINTS_AWARD_CATEGORY, 0),
+				'uid' => $refUserId,
+				'points' => $points,
+				'operation' => 'insert',
+				'description' => 'Purchase made by someone you referred, awarding points to referrer (Ubercart Order ID ' . $order->order_id . ')',
+//				'entity_id' => $order->order_id,
+//				'entity_type' => 'Ubercart Transaction',
+				'moderate' => variable_get(USERPOINTS_REF_MODERATE, 0),
+			);
+			$st = userpoints_userpointsapi($params);
+			db_query("insert into {uc_up_award_log} (uid, oid, points) values(%d, %d, %d)", $refUserId, $order->order_id, $points);
+		}
+	}
+}	

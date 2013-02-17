@@ -1,0 +1,69 @@
+<?php
+/** Implementation Hook_menu
+ *
+ */
+function custom_url_menu()
+{
+	//  REBOL edit
+  $items['today_orders'] = array(
+    'title' => '今日订单汇总',
+    'page callback' => 'get_products_bought_today',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+	
+  return $items;
+}
+
+function get_products_bought_today() {
+	drupal_add_css( drupal_get_path('module', 'custom_url') . '/test.css' );
+  // Detail table
+	drupal_set_title("今日汇总");
+	$header = array('food', 'user', 'price', 'time');
+	$date = date("Y/m/d", time());
+	dpr($date);
+	$result = db_query( "SELECT account_id, game_id, price, FROM_UNIXTIME(payment_time, '%%Y/%%m/%%d') as time FROM {user_orders} WHERE FROM_UNIXTIME(payment_time, '%%Y/%%m/%%d') = '%s'", $date);
+	$rows = array();
+
+	while ($row = db_fetch_array($result)) {
+		//dpr($row);
+		$node = node_load($row['game_id']);
+		$title = $node->title;
+		$title = '<a href="' . drupal_get_path_alias('node/' . $node->nid) . '">' . $title . '</a>';
+		$account = user_load($row['account_id']);
+		$user_name = $account->name;
+		// or if you want to output a date in year/month/day format:
+		$rows[] = array(
+      array('data' => $title, 'align' =>'center'),
+      array('data' => $user_name, 'valign' => 'center'),    
+			array('data' => number_format( $row['price'], 2 ), 'valign' => 'center'),  
+			array('data' => $row['time'], 'valign' => 'center'),    
+    );
+  } 
+  $table_attributes = array('id' => 'detail_for_table', 'align' => 'center');
+  $output .= theme('table', $header, $rows, $table_attributes, '详细列表');
+        
+	//	Brief table
+	$header = array('food', 'qty', 'price', 'time');
+	$result = db_query( "SELECT game_id, count( game_id ) as qty , price, FROM_UNIXTIME(payment_time, '%%Y/%%m/%%d') as time FROM {user_orders} WHERE FROM_UNIXTIME(payment_time, '%%Y/%%m/%%d') = '%s' GROUP BY game_id", $date );
+	$rows = array();
+	$total = 0;
+	while ($row = db_fetch_array($result)) {
+		//dpr($row);
+		$node = node_load($row['game_id']);
+		$title = $node->title;
+		$title = '<a href="' . drupal_get_path_alias('node/' . $node->nid) . '">' . $title . '</a>';
+		$rows[] = array(
+      array('data' => $title, 'align' =>'center'),
+      array('data' => $row['qty'], 'valign' => 'center'),    
+			array('data' => number_format( $row['price'], 2 ), 'valign' => 'center'),  
+			array('data' => $row['time'], 'valign' => 'center'),    
+    );
+		$total += $row['qty'] * $row['price'];
+  } 
+  $table_attributes = array('id' => 'brief_for_table', 'align' => 'center');
+	$output .= theme('table', $header, $rows, $table_attributes, '概要列表');
+	$output .= '<div class="total_amount">合计:' . $total . '</div>';
+  return $output; 
+}
+?>

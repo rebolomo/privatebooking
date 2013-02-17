@@ -1,0 +1,464 @@
+<?php
+
+
+define('USERPOINTS_UC_DISC',   'userpoints_ubercart_payment');
+define('USERPOINTS_DISCOUNT',     'userpoints_discount');
+define('UC_USERPOINTS_DISCOUNT_MODERATE',      'uc_userpoints_discount_moderate');
+define('UC_USERPOINTS_DISCOUNT_MAXP',      'uc_userpoints_discount_maxp');
+define('USERPOINTS_DISCOUNT_CATEGORY',	'userpoints_discount_category');
+define('UC_USERPOINTS_DISCOUNT_CLASSES',	'uc_userpoints_discount_classes');
+
+
+
+/**
+ * Implementation of hook_help()
+ */
+function uc_userpoints_discount_help($path, $arg) {
+  switch ($path) {
+    case 'admin/modules#description':
+      return t('<strong>Userpoints Discounts:</strong> Interfaces userpoints with Ubercart, so users can use points as a discount.');
+  }
+}
+
+
+
+function uc_userpoints_discount_userpoints($op, $points = 0, $uid = 0, $event = '') {
+  $userpoints_translation = userpoints_translation();
+  switch($op) {
+    case 'setting':
+      if (module_exists('uc_cart') && module_exists('uc_payment')) {
+        $group = 'uc_userpoints_discount';
+        $form[$group] = array(
+          '#type' => 'fieldset',
+          '#collapsible' => TRUE,
+          '#collapsed' => TRUE,
+          '#title' => t('Ubercart Discount Options'),
+        );    
+        $form[$group][USERPOINTS_UC_DISC] = array(
+          '#type' => 'textfield',
+          '#title' => t('!Points used in discount (for every @currency)', array('!Points' => $userpoints_translation['!Points'], '@currency' => variable_get('uc_currency_code', 'USD'))),
+          '#default_value' => variable_get(USERPOINTS_UC_DISC, 1),
+          '#size' => 5,
+          '#maxlength' => 5,
+        );
+        $form[$group][UC_USERPOINTS_DISCOUNT_MAXP] = array(
+          '#type' => 'textfield',
+          '#title' => t('Enter the maximum percentage of the order total that can be discounted using points. Please do not include a % sign'),
+          '#default_value' => variable_get(UC_USERPOINTS_DISCOUNT_MAXP, 100),
+          '#size' => 5,
+          '#maxlength' => 5,
+        );
+        $form[$group][USERPOINTS_DISCOUNT] = array(
+          '#type' => 'radios',
+          '#title' => t('Enable !points as a discount method', userpoints_translation()),
+          '#default_value' =>  variable_get(USERPOINTS_DISCOUNT,1),
+          '#options' => array(t('No'), t('Yes')),
+        );
+		    $form[$group][USERPOINTS_DISCOUNT_CATEGORY] = array(
+    		  '#type' => 'select',
+    		  '#title' => t('Discount Category'),
+    		  '#description' => t('Category to assign awarded !points.', userpoints_translation()),
+    		  '#default_value' => variable_get(USERPOINTS_DISCOUNT_CATEGORY, NULL),
+    		  '#options' => userpoints_get_categories(),
+    		);
+        $form[$group][UC_USERPOINTS_DISCOUNT_MODERATE] = array(
+          '#type' => 'radios',
+          '#title' => t('Moderate userpoints transaction'),
+          '#default_value' => variable_get(UC_USERPOINTS_DISCOUNT_MODERATE, 0),
+		      '#options' => array(t('No'), t('Yes')),
+        );
+        $form[$group][UC_USERPOINTS_DISCOUNT_CLASSES] = array(
+          '#type' => 'checkboxes',
+          '#title' => t('Product classes discounts can be applied to'),
+          '#description' => t('Leave blank for all.'),
+          '#default_value' => variable_get(UC_USERPOINTS_DISCOUNT_CLASSES, array()),
+		      '#options' => uc_product_type_names(),
+        );
+      }
+      return $form;
+      break;
+  }
+}
+
+
+
+/**
+ * Implementation of hook_checkout_pane
+ */
+function uc_userpoints_discount_checkout_pane() {
+  global $user;
+  $curUserId	 = $user->uid;
+  $curUserPoints = intval(userpoints_get_current_points($uid = $curUserId, $tid = NULL));
+  $discMethod	 = variable_get(USERPOINTS_DISCOUNT,1);
+    
+  if ($discMethod != 0 && ($curUserPoints > 0 || request_uri() != '/cart/checkout')) {
+    $panes[] = array(
+      'id' => 'up_uc_discounts',
+      'title' => t('!Points Discount', userpoints_translation()),
+      'desc' => t('Show !points discounts for the order', userpoints_translation()),
+      'callback' => 'uc_checkout_pane_uc_userpoints_discount',
+      'weight' => 7,
+    );
+    return $panes;
+  }
+}
+
+
+
+function uc_checkout_pane_uc_userpoints_discount($op, &$arg1, $arg2) {
+  // get point discounts to apply to this order
+  global $user;
+  $curUserId = $user->uid;
+
+  switch ($op) {
+    case 'view':
+			$curUserPoints = intval(userpoints_get_current_points($uid = $curUserId, $tid = NULL));
+			$maxdisc = ($curUserPoints / intval(variable_get(USERPOINTS_UC_DISC, 1)));
+			$maxpt = variable_get(UC_USERPOINTS_DISCOUNT_MAXP, 100);
+			$description = t('Enter the amount to discount this order with !points by. This field will be ignored if paying with !points.', userpoints_translation());
+			$description .= theme('uc_userpoints_discount_info_pane', uc_currency_format(uc_userpoints_discount_discountable_total()), uc_currency_format(uc_userpoints_discount_max()), uc_currency_format($maxdisc));
+			$contents['ptamt'] = array(
+				'#type' => 'textfield',
+				'#title' => t('Discount Amount (in @currency)', array('@currency' => variable_get('uc_currency_code', 'USD'))),
+				'#description' => t('Enter the amount that you want to spend from your !points as a discount for this order.', userpoints_translation()),
+				'#default_value' => $arg1->ptamt,
+			);
+			return array('description' => $description, 'contents' => $contents);
+			break;	
+    case 'process':
+			$ptamt = $arg2['ptamt'];
+			if (!empty($ptamt) || $ptamt != '') {
+				$arg1->ptamt = $ptamt;
+			}
+			else {
+				$arg1->ptamt = 0;
+			}
+			return TRUE;
+			break;
+  }
+}
+
+
+
+/**
+ * Implementation of hook_line_item()
+ */
+function uc_userpoints_discount_line_item() {
+  $items[] = array(
+    'id' => 'ptdiscount',
+    'title' => t('Userpoints Discount'),
+    'callback' => 'uc_userpoints_discount_line_item_calc',
+    'weight' => -2,
+    'stored' => TRUE,
+    'calculated' => TRUE,
+    'display_only' => FALSE,
+  );
+  return $items;
+}
+
+function uc_userpoints_discount_line_item_calc($op, $arg1) {
+  $lines = array();
+  
+  #discount value
+  $ptamt = $arg1->ptamt;
+
+  switch ($op) {
+    case 'load':
+    case 'display':
+
+      $lines[] = array(
+        'id' => 'ptdiscount',
+        'title' => t('Discounts'),
+        'amount' => $ptamt,
+      );
+      return $lines;
+      break;
+
+    
+  }
+}
+
+
+
+/**
+ * Implementation of hook_order().
+ * This is where all the important stuff happens like taking the points...
+ */
+function uc_userpoints_discount_order($op, &$arg1, $arg2) {
+  $order 	 = $arg1;
+  $paymethod = strtolower($order->payment_method);
+  switch ($op) {
+    case 'save':
+			db_query("DELETE FROM {uc_updiscounts} WHERE oid=%d", $arg1->order_id);
+			db_query("DELETE FROM {uc_order_line_items} WHERE order_id=%d AND type='ptdiscount'", $arg1->order_id);
+			uc_line_items_calculate($arg1->order_id);	
+			global $user;
+			$curUserId = $user->uid;
+			$pagepath = str_replace('destination=','',urldecode(drupal_get_destination()));
+			$multiplier 	= (variable_get(USERPOINTS_UC_DISC, 0));
+			$maxdisc = variable_get(UC_USERPOINTS_DISCOUNT_MAXP, 100)/100;
+
+			#discountable money value of order
+			$orderamt = uc_userpoints_discount_discountable_total() + $arg1->quote['rate'];
+
+			$curUserPoints = intval(userpoints_get_current_points($uid = $curUserId, $tid = NULL));
+			$maxdisc = ($curUserPoints / intval(variable_get(USERPOINTS_UC_DISC, 1)));
+
+			#discount value
+			$ptamt = $arg1->ptamt;
+			#discount value in points
+			$points = -(($ptamt) * $multiplier);
+			$ptdisc = (($ptamt) * $multiplier);
+			
+			#max discount on order total
+			$ptmaxd = uc_userpoints_discount_max();
+			$ptmaxdPoints = $ptmaxd * $multiplier;
+			
+			if (variable_get(USERPOINTS_DISCOUNT,1) != 0 && $paymethod != 'points') {
+				if ((!empty($ptamt) || $ptamt != '') && $ptamt < $orderamt && $ptdisc <= min($curUserPoints, $ptmaxdPoints)) {
+					db_query("DELETE FROM {uc_order_line_items} WHERE order_id=%d AND type='ptdiscount'", $arg1->order_id);
+					db_query('INSERT INTO {uc_updiscounts} (uid, oid, ptamt, points) VALUES (%d, %d, \'%f\', %d)', $curUserId, $arg1->order_id, $ptamt, $points);
+					uc_order_line_item_add($arg1->order_id, 'ptdiscount', t('Discount order using !points',userpoints_translation()), -$ptamt, 1);
+				}
+				elseif ($ptdisc <= $orderamt && (!empty($ptamt) || $ptamt != '')) {
+					#this should be to check it greater than order total
+					drupal_set_message('You cannot discount an order for more than the order total.', 'error');
+					drupal_goto($pagepath);
+				}
+				elseif ($ptdisc > min($curUserPoints, $ptmaxdPoints) && (!empty($ptamt) || $ptamt != '')) {
+					#this should be to check if discount greater than max
+					drupal_set_message(t('The maximum you can discount this order by using points is %maxamount.', array('%maxamount' => uc_currency_format(min($ptmaxd, $maxdisc)))), 'error');
+					drupal_goto($pagepath);
+				}
+			}
+			elseif ($paymethod == 'points' && (!empty($ptamt) || $ptamt != '')) {
+					drupal_set_message(t('You cannot use !points to pay for a product and use !points as a discount method.', userpoints_translation()), 'error');
+					drupal_goto($pagepath);
+			}
+			break;
+		case 'submit':
+			// fires when the order is submitted and adds/subtracts thier points
+			if ($paymethod != 'points') {
+				if (variable_get(USERPOINTS_DISCOUNT,1) != 0) {
+					global $user;
+					$curUserId = $user->uid;
+					$ptamt = $arg1->ptamt;
+					$multiplier 	= intval(variable_get(USERPOINTS_UC_DISC, 0));
+				
+					// Payment completed
+					if ($curUserId != 0) {
+					// User id from the transaction
+						$points = intval(($ptamt) * $multiplier);
+						$points = -$points;
+						$params = array (
+						'tid' => variable_get(USERPOINTS_DISCOUNT_CATEGORY, 0),
+						'uid' => $curUserId,
+						'points' => $points,
+						'operation' => 'delete',
+						'description' => 'User Discount, taking poings (Ubercart Order ID ' . $order->order_id . ')',
+						'entity_id' => $order->order_id,
+						'entity_type' => 'Ubercart Transaction',
+						'moderate' => variable_get(UC_USERPOINTS_DISCOUNT_MODERATE, 0),
+						);
+						userpoints_userpointsapi($params);
+					db_query('INSERT INTO {uc_updiscounts} (uid, oid, ptamt, points) VALUES (%d, %d, \'%f\', %d)', $curUserId, $arg1->order_id, $ptamt, $points);
+					}
+
+				}
+			}
+			break;
+		case 'load':
+			$arg1->ptamt = '';
+			$result = db_query("SELECT * FROM {uc_updiscounts} WHERE oid = %d", $arg1->order_id);
+			if ($data = db_fetch_object($result)) {
+				$arg1->ptamt = $data->ptamt;
+			}
+			break;
+		case 'delete':	
+			if (variable_get(USERPOINTS_DISCOUNT,1) != 0 && $paymethod != 'points') {
+				global $user;
+				$curUserId	= $user->uid;
+				$oid			= $order->order_id;
+				$result 		= db_query("select updlog_id, points from {uc_updiscounts} where oid = %d and uid = %d and referrer = 0 and discount =1", $oid, $curUserId);
+
+				if ($result != FALSE && $pointinfo = db_fetch_object($result) != FALSE) {
+					$points = intval(($pointinfo->points) * (-1));
+					$description = 'User Discount (Ubercart Order ' . $oid . ') that has been deleted.';
+					
+					$params = array (
+						'tid' => variable_get(USERPOINTS_DISCOUNT_CATEGORY, 0),
+						'uid' => $curUserId,
+						'points' => $points,
+						'operation' => 'delete',
+						'description' => $description,
+						'entity_id' => $oid,
+						'entity_type' => 'Ubercart Transaction',
+						'moderate' => variable_get(UC_USERPOINTS_DISCOUNT_MODERATE, 0),
+					);
+					
+					userpoints_userpointsapi($params);
+					db_query("delete from {uc_updiscounts} where uplog_id = %d", $pointinfo->uplog_id);
+					db_query("DELETE FROM {uc_order_line_items} WHERE order_id=%d AND type='ptdiscount'", $arg1->order_id);
+				}
+			}
+			break;
+  }
+}
+
+
+
+/**
+ * uc_userpoints_discount_checkboxes_status()
+ * function to check if array is empty
+ * @param array
+ * @return boolean
+ */
+function uc_userpoints_discount_checkboxes_status($array) {
+  $status = FALSE;
+  if (!empty($array)) {
+    foreach($array as $row) {
+      if (!empty($row)) {
+        $status = TRUE;
+      } 
+    }
+  }
+  return $status;
+}
+
+
+
+/**
+ * uc_userpoints_discount_product_classes()
+ * @return array of all product classes
+ */
+function uc_userpoints_discount_product_classes() {
+  $result = db_query("SELECT * FROM {uc_product_classes}");
+  $rows = array();
+  //Because ubercart doesn't put the standard product class 'product' to the list, we do it manually :(
+  $nodetypes = node_get_types();
+  $rows['product'] = $nodetypes['product']->name;
+  while ($class = db_fetch_object($result)) {
+    $rows[$class->pcid] = $class->name;
+  }
+  return $rows;
+}
+
+
+
+/**
+ * uc_userpoints_discount_discountable_products()
+ * @return array of discountable products
+ */
+function uc_userpoints_discount_discountable_products() {
+  $cart_contents = uc_cart_get_contents();
+  $discountable_classes = variable_get(UC_USERPOINTS_DISCOUNT_CLASSES, NULL);
+  $discountable_products = array();
+  foreach($cart_contents as $cart_item) {
+    $node = node_load($cart_item->nid);
+    if (uc_userpoints_discount_checkboxes_status($discountable_classes) === TRUE) {
+      if ($discountable_classes[$node->type] === $node->type) {
+        $discountable_products[] = array(
+          'nid' => $cart_item->nid,
+          'name' => $node->title,
+          'class' => $node->type,
+          'price' => $cart_item->price,
+          'qty' => $cart_item->qty,
+        );
+      }
+    }
+    else {
+      $discountable_products[] = array(
+        'nid' => $cart_item->nid,
+        'name' => $node->title,
+        'class' => $node->type,
+        'price' => $cart_item->price,
+        'qty' => $cart_item->qty,
+      );
+    }
+  }
+  return $discountable_products;
+}
+
+
+
+/**
+ * uc_userpoints_discount_discountable_total()
+ * @return int Total amount of products that are discountable
+ */
+function uc_userpoints_discount_discountable_total() {
+  $discountable_products = uc_userpoints_discount_discountable_products();
+  $discountable_total = 0;
+  foreach($discountable_products as $discountable_product) {
+    $discountable_total += intval($discountable_product['price']) * intval($discountable_product['qty']); 
+  }
+  return $discountable_total;
+}
+
+
+
+/**
+ * uc_userpoints_discount_max()
+ * @return int Maximum discount amount
+ */
+function uc_userpoints_discount_max() {
+  $discount_max = (intval(uc_userpoints_discount_discountable_total()) / 100) * intval(variable_get(UC_USERPOINTS_DISCOUNT_MAXP, 100));
+  return $discount_max;
+}
+
+
+
+/**
+ * Implementation of hook_theme()
+ */
+function uc_userpoints_discount_theme() {
+  return array(
+    'uc_userpoints_discount_info_pane' => array(
+      'arguments' => array(
+        'discountable_total' => NULL,
+        'discount_max' => NULL,
+        'discount_points_available' => NULL,
+      ),
+    ),
+  );
+}
+
+
+
+/**
+ * theme_uc_userpoints_discount_info_pane()
+ * @param $discountable_total
+ * @param $discount_max
+ * @param $discount_points_available
+ * @return string discount theme info pane for cart/checkout
+ */
+function theme_uc_userpoints_discount_info_pane($discountable_total = 0, $discount_max = 0, $discount_points_available = 0) {
+  $content = '<div id="discount_info_pane">
+                <div id="discountable_total">
+                  <span id="discountable_total_label">'
+                    . t('Discountable total from this order') .
+                  ':</span>
+                  <span id="discountable_total_value">'
+                    . $discountable_total .
+                  '</span>
+                </div>
+                <div id="discount_max">
+                  <span id="discount_max_label">'
+                    . t('Maximum you can discount the order by') .
+                  ':</span>
+                  <span id="discount_max_value">'
+                    . $discount_max .
+                  '</span>
+                </div>
+                <div id="discount_points_available">
+                  <span id="discount_points_available_label">'
+                    . t('Your !points available to use', userpoints_translation()) .
+                  ':</span>
+                  <span id="discount_points_available_value">'
+                    . $discount_points_available .
+                  '</span>
+                </div>
+              </div>';
+              
+  return $content;
+}
+

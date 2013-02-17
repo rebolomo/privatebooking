@@ -1,0 +1,67 @@
+<?php
+//$Id;
+
+
+/**
+ * Implementation of hook_schema()
+ */
+function uc_userpoints_product_schema() {
+  $schema['uc_userpoints_products'] = array(
+    'fields' => array(
+      'upid' => array(
+        'type' => 'serial', 
+        'not null' => TRUE,
+      ),
+      'pfid' => array(
+        'type' => 'int', 
+        'size' => 'medium', 
+        'not null' => TRUE, 
+        'default' => 0, 
+        'disp-width' => '9',
+      ),
+      'nid' => array(
+        'type' => 'int', 
+        'size' => 'medium', 
+        'not null' => TRUE, 
+        'default' => 0, 
+        'disp-width' => '9',
+      ),
+      'tid' => array(
+        'type' => 'int', 
+        'size' => 'medium', 
+        'not null' => TRUE, 
+        'default' => 0, 
+        'disp-width' => '9',
+      ),
+      'points' => array(
+        'type' => 'int', 
+        'size' => 'medium', 
+        'not null' => TRUE, 
+        'default' => 0, 
+        'disp-width' => '9',
+      )
+    ),
+    'primary key' => array('upid'),
+  );
+  return $schema;
+}
+
+
+/**
+ * Implementation of hook_install()
+ */
+function uc_userpoints_product_install() {
+  drupal_install_schema('uc_userpoints_product');
+}
+
+
+/**
+ * Implementation of hook_uninstall()
+ */
+function uc_userpoints_product_uninstall() {
+  drupal_uninstall_schema('uc_userpoints_product');
+  
+  variable_del('userpoints_product_moderate');
+  variable_del('userpoints_product_category');
+}
+

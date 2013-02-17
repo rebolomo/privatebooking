@@ -1,0 +1,58 @@
+<?php
+//$Id;
+
+
+/**
+ * Implementation of hook_schema
+ */
+function uc_userpoints_award_schema() {
+  $schema['uc_up_award_log'] = array(
+    'fields' => array(
+	    'uplog_id' => array(
+	      'type' => 'serial', 
+	      'not null' => TRUE,
+	    ),
+	    'uid' => array(
+	      'type' => 'int', 
+	      'not null' => TRUE, 
+	      'default' => '0',
+	    ),
+	    'oid' => array(
+	      'type' => 'int', 
+	      'not null' => TRUE, 
+	      'default' => '0',
+	    ),
+      'points' => array(
+        'type' => 'int', 
+        'size' => 'tiny', 
+        'default' => '0',
+      ),
+	  ),
+	'primary key' => array('uplog_id'),
+  );
+
+  return $schema;
+}
+
+
+/**
+ * Install the initial schema.
+ */
+function uc_userpoints_award_install() {
+  drupal_install_schema('uc_userpoints_award');
+}
+
+
+/**
+* Implementation of hook_uninstall().
+*/
+function uc_userpoints_award_uninstall() {
+  drupal_uninstall_schema('uc_userpoints_award');
+  
+  variable_del('userpoints_ubercart_earn');
+  variable_del('userpoints_min_purchase');
+  variable_del('userpoints_award_to');
+  variable_del('userpoints_ref_mult');
+  variable_del('userpoints_award_moderate');
+  variable_del('userpoints_ref_moderate');
+}
